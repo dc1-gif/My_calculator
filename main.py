@@ -2,10 +2,48 @@ import ast
 import operator
 
 from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.textinput import TextInput
+from kivy.core.window import Window
+from kivy.lang import Builder
+from kivy.properties import ListProperty
 from kivy.uix.button import Button
+
+Window.clearcolor = (0.07, 0.07, 0.08, 1)
+
+KV = """
+<CalcButton>:
+    background_normal: ''
+    background_down: ''
+    background_color: 0, 0, 0, 0
+    font_size: '32sp'
+    color: self.fg
+    canvas.before:
+        Color:
+            rgba: self.bg if self.state == 'normal' else [min(c + 0.15, 1) for c in self.bg]
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [self.height / 2.5]
+
+BoxLayout:
+    orientation: 'vertical'
+    padding: 16
+    spacing: 16
+
+    Label:
+        id: display
+        size_hint_y: 0.25
+        text: ''
+        font_size: '72sp' if len(self.text) < 9 else '44sp'
+        halign: 'right'
+        valign: 'bottom'
+        text_size: self.size
+        color: 1, 1, 1, 1
+
+    GridLayout:
+        id: grid
+        cols: 4
+        spacing: 12
+"""
 
 OPS = {
     ast.Add: operator.add,
@@ -32,59 +70,67 @@ def safe_eval(expr):
     return ev(ast.parse(expr, mode="eval"))
 
 
+class CalcButton(Button):
+    bg = ListProperty([0.2, 0.2, 0.22, 1])
+    fg = ListProperty([1, 1, 1, 1])
+
+
+NUMBER = ([0.2, 0.2, 0.22, 1], [1, 1, 1, 1])
+FUNCTION = ([0.65, 0.65, 0.68, 1], [0, 0, 0, 1])
+OPERATOR = ([1, 0.58, 0, 1], [1, 1, 1, 1])
+
+KEYS = [
+    ("C", FUNCTION), ("<", FUNCTION), ("%", FUNCTION), ("÷", OPERATOR),
+    ("7", NUMBER), ("8", NUMBER), ("9", NUMBER), ("×", OPERATOR),
+    ("4", NUMBER), ("5", NUMBER), ("6", NUMBER), ("−", OPERATOR),
+    ("1", NUMBER), ("2", NUMBER), ("3", NUMBER), ("+", OPERATOR),
+    ("00", NUMBER), ("0", NUMBER), (".", NUMBER), ("=", OPERATOR),
+]
+
+SYMBOLS = {"÷": "/", "×": "*", "−": "-"}
+
+
 class CalculatorApp(App):
     def build(self):
-        root = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        root = Builder.load_string(KV)
+        self.display = root.ids.display
+        self.just_calculated = False
 
-        self.display = TextInput(
-            font_size=48,
-            multiline=False,
-            readonly=True,
-            halign="right",
-            size_hint_y=0.2,
-        )
-        root.add_widget(self.display)
-
-        grid = GridLayout(cols=4, spacing=8)
-        keys = [
-            "C", "<", "%", "/",
-            "7", "8", "9", "*",
-            "4", "5", "6", "-",
-            "1", "2", "3", "+",
-            "0", ".", "=", "",
-        ]
-        for key in keys:
-            if key == "":
-                grid.add_widget(BoxLayout())
-                continue
-            btn = Button(text=key, font_size=32)
+        for label, (bg, fg) in KEYS:
+            btn = CalcButton(text=label, bg=bg, fg=fg)
             btn.bind(on_press=self.on_key)
-            grid.add_widget(btn)
-        root.add_widget(grid)
-
+            root.ids.grid.add_widget(btn)
         return root
 
     def on_key(self, button):
         key = button.text
+        text = self.display.text
+
         if key == "C":
             self.display.text = ""
         elif key == "<":
-            self.display.text = self.display.text[:-1]
+            self.display.text = text[:-1]
         elif key == "=":
             self.calculate()
         else:
-            if self.display.text == "Error":
-                self.display.text = ""
-            self.display.text += key
+            if text == "Error" or (self.just_calculated and key.isdigit()):
+                text = ""
+            self.display.text = text + key
+        if key != "=":
+            self.just_calculated = False
 
     def calculate(self):
+        expr = self.display.text
+        for shown, real in SYMBOLS.items():
+            expr = expr.replace(shown, real)
         try:
-            result = safe_eval(self.display.text)
+            result = safe_eval(expr)
             if isinstance(result, float):
                 result = round(result, 10)
                 if result.is_integer():
                     result = int(result)
             self.display.text = str(result)
+            self.just_calculated = True
         except Exception:
             self.display.text = "Error"
 
